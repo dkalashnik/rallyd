@@ -1,21 +1,22 @@
 #!/usr/bin/python
 
 import base64
-import subprocess
 import datetime
 import json
-import uuid
-import thread
 import os
-import time
+import subprocess
 import sys
+import thread
+import time
+import uuid
 
-from flask import Flask, request, jsonify, send_from_directory
+import flask
+from oslo_config import cfg
 from rally import api
+from rally.cli.commands import task as rally_task_commands
 from rally import db
 from rally import plugins
-from rally.cli.commands import task as rally_task_commands
-from oslo_config import cfg
+
 
 CONF = cfg.CONF
 CONF(sys.argv[1:], project="rally")
@@ -59,8 +60,9 @@ class Scenario(Resource):
 
         self.id = uuid.uuid4().__str__()
 
-        self.filename = self.filename if self.filename is not None\
-            else self.id + ".json"
+        self.filename = (self.filename
+                         if self.filename is not None
+                         else self.id + ".json")
         self.filename = os.path.join(WORK_DIR, self.filename)
 
         with file(self.filename, mode="w") as sc_file:
@@ -78,10 +80,9 @@ class Task(Resource):
         self.scenario_id = kwargs.get('scenario_id')
         scenario = app.scenarios.get_by_id(self.scenario_id)
 
-        self.input_task = \
-            app.rally_task_commands._load_task(
-                task_file=scenario.filename,
-                task_args=self.task_args)
+        self.input_task = app.rally_task_commands._load_task(
+            task_file=scenario.filename,
+            task_args=self.task_args)
         self.rally_task = api.Task.create(ENV_NAME, scenario.type)
         self.id = self.rally_task['uuid']
         self.state = "new"
@@ -129,16 +130,15 @@ class Result(Resource):
         super(Result, self).__init__(*args, **kwargs)
 
         task = kwargs.get('task')
-        self.filename = "{0}_{1}_{2}.html".\
-            format(app.scenarios.get_by_id(task.scenario_id).type,
-                   datetime.datetime.now(),
-                   task.id)
+        self.filename = "{0}_{1}_{2}.html".format(
+            app.scenarios.get_by_id(task.scenario_id).type,
+            datetime.datetime.now(),
+            task.id)
 
         app.rally_task_commands.report(
             task.id,
             out=os.path.join(WORK_DIR, self.filename),
             out_format="html")
-
 
 
 class Container(list):
@@ -153,7 +153,7 @@ class Container(list):
         return [elem.data for elem in self]
 
 
-class Rallyd(Flask):
+class Rallyd(flask.Flask):
     def __init__(self, *args, **kwargs):
         super(Rallyd, self).__init__(*args, **kwargs)
         self.scenarios = Container()
@@ -169,12 +169,12 @@ app = Rallyd(__name__)
 @app.route("/db", methods=['POST'])
 def recreate_db():
     subprocess.call("rally-manage db recreate".split())
-    return jsonify({"msg": "Db recreated"})
+    return flask.jsonify({"msg": "Db recreated"})
 
 
 @app.route("/deployments", methods=['POST'])
 def create_deployment():
-    request_data = json.loads(request.data)
+    request_data = json.loads(flask.request.data)
     config = {
         "type": "ExistingCloud",
         "auth_url": request_data.get("OS_AUTH_URL"),
@@ -184,57 +184,57 @@ def create_deployment():
             "password": request_data.get("OS_PASSWORD"),
             "tenant_name": request_data.get("OS_TENANT_NAME")}}
     api.Deployment.create(config, ENV_NAME)
-    return jsonify(config)
+    return flask.jsonify(config)
 
 
 @app.route("/scenarios", methods=['POST'])
 def upload_scenario():
-    request_data = json.loads(request.data)
+    request_data = json.loads(flask.request.data)
     scenario = Scenario(**request_data)
     app.scenarios.append(scenario)
-    return jsonify(scenario.data)
+    return flask.jsonify(scenario.data)
 
 
 @app.route("/scenarios", methods=['GET'])
 def list_scenarios():
-    return jsonify({"scenarios": app.scenarios.data})
+    return flask.jsonify({"scenarios": app.scenarios.data})
 
 
 @app.route("/tasks", methods=['POST'])
 def add_task():
-    request_data = json.loads(request.data)
+    request_data = json.loads(flask.request.data)
     task = Task(**request_data)
     app.tasks.append(task)
-    return jsonify(task.data)
+    return flask.jsonify(task.data)
 
 
 @app.route("/tasks", methods=['GET'])
 def list_tasks():
-    return jsonify({"tasks": app.tasks.data})
+    return flask.jsonify({"tasks": app.tasks.data})
 
 
 @app.route("/tasks/<task_id>", methods=['GET'])
 def get_task(task_id):
-    return jsonify(app.tasks.get_by_id(task_id).data)
+    return flask.jsonify(app.tasks.get_by_id(task_id).data)
 
 
 @app.route("/runs", methods=['POST'])
 def start_run():
-    request_data = json.loads(request.data)
+    request_data = json.loads(flask.request.data)
     run = Run(**request_data)
     app.runs.append(run)
     run.start()
-    return jsonify(run.data)
+    return flask.jsonify(run.data)
 
 
 @app.route("/runs", methods=['GET'])
 def list_runs():
-    return jsonify({"runs": app.runs.data})
+    return flask.jsonify({"runs": app.runs.data})
 
 
 @app.route("/runs/<run_id>", methods=['GET'])
 def get_run(run_id):
-    return jsonify(app.runs.get_by_id(run_id).data)
+    return flask.jsonify(app.runs.get_by_id(run_id).data)
 
 
 @app.route("/runs/<run_id>/result", methods=['GET'])
@@ -248,13 +248,13 @@ def get_result(run_id):
         app.results.append(result)
         local_result_list.append(result)
 
-    return jsonify({"results": [result.filename
-                                for result in local_result_list]})
+    return flask.jsonify({"results": [result.filename
+                                      for result in local_result_list]})
 
 
 @app.route("/result/<filename>")
 def get_single_result(filename):
-    return send_from_directory(WORK_DIR, filename)
+    return flask.send_from_directory(WORK_DIR, filename)
 
 
 @app.route("/verification", methods=['POST'])

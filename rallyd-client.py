@@ -1,11 +1,13 @@
 #!/usr/bin/python
 
-import os
+from __future__ import print_function
+
 import argparse
 import base64
 import json
-import urlparse
+import os
 import pprint
+import urlparse
 
 import requests
 
@@ -165,6 +167,6 @@ if __name__ == "__main__":
     _, data = args.func(**vars(args))
 
     if args.json:
-        print json.dumps(data)
+        print(json.dumps(data))
     else:
         pprint.pprint(data)
