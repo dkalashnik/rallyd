@@ -1,7 +1,2 @@
-Unofficial daemon and client for rally testing tool
-===================================================
-
-Inroduction
------------
-
-TBD
+Unofficial HTTP API and client for rally testing tool
+=====================================================
