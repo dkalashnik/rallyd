@@ -272,5 +272,9 @@ def get_tempest_results():
     pass
 
 
-if __name__ == "__main__":
+def main():
     app.run("0.0.0.0", 8001, debug=True)
+
+
+if __name__ == '__main__':
+    main()
