@@ -119,7 +119,7 @@ class Run(Resource):
         for task_id in self.task_ids:
             tasks_states.append(app.tasks.get_by_id(task_id)['state'])
 
-        if all([i == 'finished' for i in tasks_states]):
+        if all([i != 'running' for i in tasks_states]):
             self.state = 'finished'
 
 
