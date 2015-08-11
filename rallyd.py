@@ -1,7 +1,6 @@
 #!/usr/bin/python
 
 import base64
-import datetime
 import json
 import os
 import subprocess
@@ -119,7 +118,10 @@ class Run(Resource):
         for task_id in self.task_ids:
             tasks_states.append(app.tasks.get_by_id(task_id)['state'])
 
-        if all([i != 'running' for i in tasks_states]):
+        app.logger.info('Task states: {0}'.format(tasks_states))
+
+        if all([state not in ['running', 'verifying']
+                for state in tasks_states]):
             self.state = 'finished'
 
 
@@ -130,9 +132,8 @@ class Result(Resource):
         super(Result, self).__init__(*args, **kwargs)
 
         task = kwargs.get('task')
-        self.filename = "{0}_{1}_{2}.html".format(
+        self.filename = "{0}_{1}.html".format(
             app.scenarios.get_by_id(task.scenario_id).type,
-            datetime.datetime.now(),
             task.id)
 
         app.rally_task_commands.report(
@@ -178,7 +179,6 @@ def create_deployment():
     config = {
         "type": "ExistingCloud",
         "auth_url": request_data.get("OS_AUTH_URL"),
-        "endpoint": request_data.get("OS_ENDPOINT"),
         "admin": {
             "username": request_data.get("OS_USERNAME"),
             "password": request_data.get("OS_PASSWORD"),
