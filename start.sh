@@ -9,6 +9,4 @@ done
 
 sudo /etc/init.d/haproxy restart
 
-export HTTP_PROXY='http://127.0.0.1:8888/'
-
 rallyd --config-file /etc/rally/rally.conf
