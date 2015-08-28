@@ -1,2 +1,2 @@
-Unofficial HTTP API and client for rally testing tool
-=====================================================
+Unofficial HTTP API for rally testing tool
+==========================================
