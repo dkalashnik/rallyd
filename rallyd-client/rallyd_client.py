@@ -104,3 +104,11 @@ class RallydClient(object):
                     result.write(block)
 
         return results
+
+
+def main():
+    raise NotImplemented()
+
+
+if __name__ == '__main__':
+    main()
