@@ -1,167 +1,23 @@
 #!/usr/bin/python
 
-import base64
 import json
-import os
 import subprocess
 import sys
-import thread
-import time
-import uuid
 
 import flask
 from oslo_config import cfg
 from rally import api
-from rally.cli.commands import task as rally_task_commands
-from rally import db
+from rally.common import db
 from rally import plugins
 
 
 CONF = cfg.CONF
 CONF(sys.argv[1:], project="rally")
-plugins.load()
-ENV_NAME = "haos"
-WORK_DIR = "/tmp/"
-
-
-class Resource(object):
-    fields = []
-    non_serializable = []
-
-    def __init__(self, *args, **kwargs):
-        for field in self.fields:
-            setattr(self, field, kwargs.get(field, None))
-
-        self.id = uuid.uuid4().__str__()
-
-    def __getitem__(self, item):
-        return getattr(self, item)
-
-    def __setitem__(self, key, value):
-        setattr(self, key, value)
-
-    def update(self):
-        pass
-
-    @property
-    def data(self):
-        self.update()
-        return dict((field, getattr(self, field))
-                    for field in self.fields
-                    if field not in self.non_serializable)
-
-
-class Scenario(Resource):
-    fields = ['id', 'name', 'filename', 'type', 'args']
-
-    def __init__(self, *args, **kwargs):
-        super(Scenario, self).__init__(*args, **kwargs)
-
-        self.id = uuid.uuid4().__str__()
-
-        self.filename = (self.filename
-                         if self.filename is not None
-                         else self.id + ".json")
-        self.filename = os.path.join(WORK_DIR, self.filename)
-
-        with file(self.filename, mode="w") as sc_file:
-            sc_file.write(base64.b64decode(kwargs.get('data')))
-
-
-class Task(Resource):
-    fields = ['id', 'scenario_id', 'task_args',
-              'task', 'input_task', 'state']
-    non_serializable = ['task', 'input_task']
-
-    def __init__(self, *args, **kwargs):
-        super(Task, self).__init__(*args, **kwargs)
-
-        self.scenario_id = kwargs.get('scenario_id')
-        scenario = app.scenarios.get_by_id(self.scenario_id)
-
-        self.input_task = app.rally_task_commands._load_task(
-            task_file=scenario.filename,
-            task_args=self.task_args)
-        self.rally_task = api.Task.create(ENV_NAME, scenario.type)
-        self.id = self.rally_task['uuid']
-        self.state = "new"
-
-    def update(self):
-        rally_task = db.task_get(self.id)
-        self.state = rally_task['status']
-
-    def start_task(self):
-        api.Task.start(ENV_NAME, self.input_task,
-                       task=self.rally_task,
-                       abort_on_sla_failure=False)
-        self.update()
-
-
-class Run(Resource):
-    fields = ['id', 'task_ids', 'state']
-
-    def __init__(self, *args, **kwargs):
-        super(Run, self).__init__(*args, **kwargs)
-
-        self.state = 'new'
-
-    def start(self):
-        for task_id in self.task_ids:
-            task = app.tasks.get_by_id(task_id)
-            thread.start_new_thread(task.start_task, ())
-            time.sleep(5)
-            task.update()
-        self.state = 'running'
-
-    def update(self):
-        tasks_states = []
-        for task_id in self.task_ids:
-            tasks_states.append(app.tasks.get_by_id(task_id)['state'])
-
-        app.logger.info('Task states: {0}'.format(tasks_states))
-
-        if all([state not in ['running', 'verifying']
-                for state in tasks_states]):
-            self.state = 'finished'
-
-
-class Result(Resource):
-    fields = ['filename']
-
-    def __init__(self, *args, **kwargs):
-        super(Result, self).__init__(*args, **kwargs)
-
-        task = kwargs.get('task')
-        self.filename = "{0}_{1}.html".format(
-            app.scenarios.get_by_id(task.scenario_id).type,
-            task.id)
-
-        app.rally_task_commands.report(
-            task.id,
-            out=os.path.join(WORK_DIR, self.filename),
-            out_format="html")
-
-
-class Container(list):
-    def __init__(self, *args, **kwargs):
-        super(Container, self).__init__(*args, **kwargs)
-
-    def get_by_id(self, id):
-        return filter(lambda elem: elem.id == id, self)[0]
-
-    @property
-    def data(self):
-        return [elem.data for elem in self]
 
 
 class Rallyd(flask.Flask):
     def __init__(self, *args, **kwargs):
         super(Rallyd, self).__init__(*args, **kwargs)
-        self.scenarios = Container()
-        self.tasks = Container()
-        self.runs = Container()
-        self.results = Container()
-        self.rally_task_commands = rally_task_commands.TaskCommands()
 
 
 app = Rallyd(__name__)
@@ -175,105 +31,116 @@ def recreate_db():
 
 @app.route("/deployments", methods=['POST'])
 def create_deployment():
-    request_data = json.loads(flask.request.data)
+    request = json.loads(flask.request.data)
     config = {
         "type": "ExistingCloud",
-        "auth_url": request_data.get("OS_AUTH_URL"),
+        "auth_url": request.get("auth_url"),
         "admin": {
-            "username": request_data.get("OS_USERNAME"),
-            "password": request_data.get("OS_PASSWORD"),
-            "tenant_name": request_data.get("OS_TENANT_NAME")}}
-    api.Deployment.create(config, ENV_NAME)
-    return flask.jsonify(config)
+            "username": request.get("username"),
+            "password": request.get("password"),
+            "tenant_name": request.get("tenant_name")}}
+    deployment = api.Deployment.create(config,
+                                       request.get("environment_name",
+                                                   "Default"))
+    return flask.jsonify(deployment)
 
 
-@app.route("/scenarios", methods=['POST'])
-def upload_scenario():
-    request_data = json.loads(flask.request.data)
-    scenario = Scenario(**request_data)
-    app.scenarios.append(scenario)
-    return flask.jsonify(scenario.data)
+@app.route("/deployments/<deployment_uuid>", methods=['GET'])
+def get_deployment(deployment_uuid):
+    deployment = api.Deployment.get(deployment_uuid)
+    return flask.jsonify(deployment)
 
 
-@app.route("/scenarios", methods=['GET'])
-def list_scenarios():
-    return flask.jsonify({"scenarios": app.scenarios.data})
+@app.route("/deployments/<deployment_uuid>", methods=['PUT'])
+def recreate_deployment(deployment_uuid):
+    api.Deployment.recreate(deployment_uuid)
+    deployment = api.Deployment.get(deployment_uuid)
+    return flask.jsonify(deployment)
+
+
+@app.route("/deployments/<deployment_uuid>", methods=['DELETE'])
+def delete_deployment(deployment_uuid):
+    api.Deployment.destroy(deployment_uuid)
+    return 'Deleted', 204
+
+
+def find_deployment():
+    deployments = db.deployment_list()
+    if len(deployments) > 1:
+        flask.abort(500)
+    if len(deployments) == 0:
+        flask.abort(500)
+    return deployments[0].uuid
 
 
 @app.route("/tasks", methods=['POST'])
-def add_task():
-    request_data = json.loads(flask.request.data)
-    task = Task(**request_data)
-    app.tasks.append(task)
-    return flask.jsonify(task.data)
+def create_task():
+    request = json.loads(flask.request.data)
+    deployment_uuid = request.get('deployment_uuid', None)
+    tag = request.get('tag', 'None')
+    task_template = request.get('task_config')
+    task_params = request.get('task_params', {})
+    abort_on_sla_failure = request.get('abort_on_sla_failure', False)
+
+    if deployment_uuid is None:
+        deployment_uuid = find_deployment()
+
+    task_config = api.Task.render_template(task_template, **task_params)
+    api.Task.validate(deployment_uuid, task_config)
+    task = api.Task.create(deployment_uuid, tag)
+
+    # TODO: Wrap with multiprocessing
+    api.Task.start(deployment_uuid, task_config, task, abort_on_sla_failure)
+    return flask.jsonify(task)
 
 
-@app.route("/tasks", methods=['GET'])
-def list_tasks():
-    return flask.jsonify({"tasks": app.tasks.data})
-
-
-@app.route("/tasks/<task_id>", methods=['GET'])
-def get_task(task_id):
-    return flask.jsonify(app.tasks.get_by_id(task_id).data)
-
-
-@app.route("/runs", methods=['POST'])
-def start_run():
-    request_data = json.loads(flask.request.data)
-    run = Run(**request_data)
-    app.runs.append(run)
-    run.start()
-    return flask.jsonify(run.data)
-
-
-@app.route("/runs", methods=['GET'])
-def list_runs():
-    return flask.jsonify({"runs": app.runs.data})
-
-
-@app.route("/runs/<run_id>", methods=['GET'])
-def get_run(run_id):
-    return flask.jsonify(app.runs.get_by_id(run_id).data)
-
-
-@app.route("/runs/<run_id>/result", methods=['GET'])
-def get_result(run_id):
-    run = app.runs.get_by_id(run_id)
-    local_result_list = []
-
-    for task_id in run.task_ids:
-        result = Result(task=app.tasks.get_by_id(task_id))
-
-        app.results.append(result)
-        local_result_list.append(result)
-
-    return flask.jsonify({"results": [result.filename
-                                      for result in local_result_list]})
-
-
-@app.route("/result/<filename>")
-def get_single_result(filename):
-    return flask.send_from_directory(WORK_DIR, filename)
+@app.route("/tasks/<task_uuid>", methods=['DELETE'])
+def delete_task(task_uuid):
+    force = flask.request.args.get('force', False)
+    if force:
+        force = True
+    api.Task.delete(task_uuid, force)
 
 
 @app.route("/verification", methods=['POST'])
 def install_tempest():
-    pass
+    request = json.loads(flask.request.data)
+    deployment_uuid = request.get('deployment_uuid', None)
+    tempest_source = request.get('tempest_source', None)
+
+    if deployment_uuid is None:
+        deployment_uuid = find_deployment()
+
+    tempest = api.Verification.install_tempest(deployment_uuid, tempest_source)
+    return flask.jsonify(tempest)
 
 
-@app.route("/verification/run", methods=['POST'])
-def run_tempest():
-    pass
+@app.route("/verification/<deployment_uuid>", methods=['PUT'])
+def reinstall_tempest(deployment_uuid):
+    tempest = api.Verification.reinstall_tempest(deployment_uuid)
+    return flask.jsonify(tempest)
 
 
-@app.route("/verification/result", methods=['GET'])
-def get_tempest_results():
-    pass
+@app.route("/verification/<deployment_uuid>/run", methods=['POST'])
+def run_tempest(deployment_uuid):
+    request = json.loads(flask.request.data)
+    set_name = request.get('set_name')
+    regex = request.get('regex')
+    tempest_config = request.get('tempest_config', None)
+
+    api.Verification.verify(deployment_uuid, set_name, regex, tempest_config)
+
+
+@app.route("/verification/<deployment_uuid>", methods=['DELETE'])
+def uninstall_tempest(deployment_uuid):
+    api.Verification.uninstall_tempest(deployment_uuid)
+    return 'Deleted', 204
 
 
 def main():
+    plugins.load()
     app.run("0.0.0.0", 8001, debug=True)
+
 
 
 if __name__ == '__main__':
