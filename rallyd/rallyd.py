@@ -1,22 +1,24 @@
 #!/usr/bin/python
 
 import json
+import datetime
 import subprocess
 import sys
-import multiprocessing
+import os
 import logging
+import threading
+import uuid
+import urllib
 
 import flask
 from oslo_config import cfg
 from rally import api
 from rally.cli.commands import task as task_cli
 from rally.common import db
+from rally.common import objects
 from rally import plugins
-
-
-CONF = cfg.CONF
-CONF(sys.argv[1:], project="rally")
-WORKDIR = '/tmp'
+from rally.verification.tempest import tempest
+from rally.verification.tempest import json2html
 
 
 class Rallyd(flask.Flask):
@@ -24,13 +26,83 @@ class Rallyd(flask.Flask):
         super(Rallyd, self).__init__(*args, **kwargs)
 
 
+class DateJSONEncoder(flask.json.JSONEncoder):
+
+    def default(self, obj):
+        if isinstance(obj, datetime.datetime):
+            return str(obj)
+        return flask.json.JSONEncoder.default(self, obj)
+
+
+class Tee(object):
+    def __init__(self, name, mode):
+        self.file = open(name, mode)
+        self.stdout = sys.stdout
+        sys.stdout = self
+
+    def __del__(self):
+        sys.stdout = self.stdout
+        self.file.close()
+
+    def write(self, data):
+        self.file.write(data)
+        self.stdout.write(data)
+        self.file.flush()
+
+
+CONF = cfg.CONF
+CONF(sys.argv[1:], project="rally")
+WORKDIR = '/tmp'
 app = Rallyd(__name__)
+app.json_encoder = DateJSONEncoder
+
+
+def setup_logging(log_filename_prefix, log_filename_suffix=''):
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(threadName)s - '
+                                  '%(levelname)s - %(message)s')
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.setLevel(logging.INFO)
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - '
+                                  '%(levelname)s - %(message)s')
+    log_filename = "{0}_{1}.log".format(log_filename_prefix,
+                                        log_filename_suffix)
+    file_handler = logging.FileHandler(os.path.join(WORKDIR, log_filename))
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    logger = logging.getLogger('rally')
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(stdout_handler)
+    logger.addHandler(file_handler)
+
+@app.route("/api_map", methods=['GET'])
+def api_map():
+    output = []
+    for rule in app.url_map.iter_rules():
+
+        options = {}
+        for arg in rule.arguments:
+            options[arg] = "[{0}]".format(arg)
+
+        methods = ','.join(filter(lambda x: x not in ['OPTIONS', 'HEAD'],
+                                  rule.methods))
+        url = flask.url_for(rule.endpoint, **options)
+        output.append((rule.endpoint, methods, url))
+    output = sorted(output, key=lambda x: x[2])
+    output = [
+        urllib.unquote("{:25s} {:20s} {}".format(endpoint, methods, url))
+        for endpoint, methods, url in output
+        ]
+
+    return flask.jsonify({"map": output})
 
 
 @app.route("/db", methods=['POST'])
 def recreate_db():
     subprocess.call("rally-manage db recreate".split())
-    return flask.jsonify({"msg": "Db recreated"})
+    return flask.jsonify({"msg": "Db recreated"}), 201
 
 
 @app.route("/deployments", methods=['POST'])
@@ -43,27 +115,30 @@ def create_deployment():
             "username": request.get("username"),
             "password": request.get("password"),
             "tenant_name": request.get("tenant_name")}}
-    deployment = api.Deployment.create(config,
-                                       request.get("environment_name",
-                                                   "Default"))
-    return flask.jsonify(deployment)
+    deployment = api.Deployment.create(
+        config, request.get("environment_name",
+                            "default-{0}".format(uuid.uuid4().__str__())))
+
+    return flask.jsonify(deployment.deployment._as_dict()), 201
 
 
 @app.route("/deployments", methods=['GET'])
 def list_deployments():
-    return flask.jsonify(db.deployment_list())
+    return flask.jsonify(
+        {"deployments": [i._as_dict() for i in db.deployment_list()]})
 
 
 @app.route("/deployments/<deployment_uuid>", methods=['GET'])
 def get_deployment(deployment_uuid):
     deployment = api.Deployment.get(deployment_uuid)
-    return flask.jsonify(deployment)
+    return flask.jsonify(deployment.deployment._as_dict())
+
 
 @app.route("/deployments/<deployment_uuid>", methods=['PUT'])
 def recreate_deployment(deployment_uuid):
     api.Deployment.recreate(deployment_uuid)
     deployment = api.Deployment.get(deployment_uuid)
-    return flask.jsonify(deployment)
+    return flask.jsonify(deployment.deployment._as_dict()), 201
 
 
 @app.route("/deployments/<deployment_uuid>", methods=['DELETE'])
@@ -72,65 +147,82 @@ def delete_deployment(deployment_uuid):
     return 'Deleted', 204
 
 
-def find_deployment():
-    deployments = db.deployment_list()
-    if len(deployments) > 1:
-        flask.abort(500)
-    if len(deployments) == 0:
-        flask.abort(500)
-    return deployments[0].uuid
+@app.route("/deployments/<deployment_uuid>/tempest", methods=['POST'])
+def install_tempest(deployment_uuid):
+    request = json.loads(flask.request.data)
+    tempest_source = request.get('tempest_source', None)
+
+    setup_logging('tempest_installation', deployment_uuid)
+
+    threading.Thread(target=api.Verification.install_tempest,
+                     args=(deployment_uuid,
+                           tempest_source)).start()
+
+    return flask.jsonify({"msg": "Start installing tempest",
+                          "deployment_uuid": deployment_uuid}), 201
+
+
+@app.route("/deployments/<deployment_uuid>/tempest", methods=['GET'])
+def get_tempest_status(deployment_uuid):
+    verifier = tempest.Tempest(deployment_uuid)
+    status = os.path.exists(verifier.path(".testrepository"))
+    return flask.jsonify({"Installed": status})
+
+
+@app.route("/deployments/<deployment_uuid>/tempest", methods=['PUT'])
+def reinstall_tempest(deployment_uuid):
+    api.Verification.reinstall_tempest(deployment_uuid)
+    return flask.jsonify({"msg": "Tempest reinstalled",
+                          "deployment_uuid": deployment_uuid}), 201
+
+
+@app.route("/deployments/<deployment_uuid>/tempest", methods=['DELETE'])
+def uninstall_tempest(deployment_uuid):
+    api.Verification.uninstall_tempest(deployment_uuid)
+    return 'Deleted', 204
 
 
 @app.route("/tasks", methods=['POST'])
 def create_task():
+    def byteify(input_struct):
+        if isinstance(input_struct, dict):
+            return {byteify(key): byteify(value)
+                    for key, value in input_struct.iteritems()}
+        elif isinstance(input_struct, list):
+            return [byteify(element) for element in input_struct]
+        elif isinstance(input_struct, unicode):
+            return input_struct.encode('utf-8')
+        else:
+            return input_struct
+
     request = json.loads(flask.request.data)
-    deployment_uuid = request.get('deployment_uuid', None)
+    request = byteify(request)
+    deployment_uuid = request.get('deployment_uuid')
     tag = request.get('tag', None)
-    task_template = request.get('task_config')
-    task_params = request.get('task_params', {})
+    task_config = request.get('task_config')
     abort_on_sla_failure = request.get('abort_on_sla_failure', False)
 
-    if deployment_uuid is None:
-        deployment_uuid = find_deployment()
-
-    task_config = api.Task.render_template(task_template, **task_params)
-    api.Task.validate(deployment_uuid, task_config)
     task = api.Task.create(deployment_uuid, tag)
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s-%(process)s'
-                                  ' - %(levelname)s - %(message)s')
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-    stdout_handler.setLevel(logging.INFO)
+    setup_logging('task', task.task.uuid)
 
-    file_handler = logging.FileHandler('{1}/{0}.log'.format(WORKDIR,
-                                                            task.uuid))
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(logging.DEBUG)
+    threading.Thread(target=api.Task.start,
+                     args=(deployment_uuid,
+                           task_config,
+                           task,
+                           abort_on_sla_failure)).start()
 
-    logger = logging.getLogger('rally')
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(stdout_handler)
-    logger.addHandler(file_handler)
-
-    multiprocessing.Process(target=api.Task.start,
-                            name="rally",
-                            args=(deployment_uuid,
-                                  task_config,
-                                  task,
-                                  abort_on_sla_failure)).start()
-
-    return flask.jsonify(task)
+    return flask.jsonify(task.task._as_dict()), 201
 
 
 @app.route("/tasks", methods=['GET'])
 def list_tasks():
-    return flask.jsonify(db.task_list())
+    return flask.jsonify({"tasks": [i._as_dict() for i in db.task_list()]})
 
 
 @app.route("/tasks/<task_uuid>", methods=['GET'])
 def get_task(task_uuid):
-    return flask.jsonify(db.task_get(task_uuid))
+    return flask.jsonify(db.task_get(task_uuid)._as_dict())
 
 
 @app.route("/tasks/<task_uuid>/log", methods=['GET'])
@@ -144,11 +236,11 @@ def get_task_log(task_uuid):
                                             start_line=-10))
     else:
         start_line = int(start_line)
-
     if end_line is not None:
         end_line = int(end_line)
 
-    with file('{0}/{1}.log'.format(WORKDIR, task_uuid), "r") as log:
+    task_log_filename = "task_{0}.log".format(WORKDIR, task_uuid)
+    with open(os.path.join(WORKDIR, task_log_filename), "r") as log:
         log_lines = log.readlines()
         return flask.jsonify({"task_id": task_uuid,
                               "total_lines": len(log_lines),
@@ -157,29 +249,31 @@ def get_task_log(task_uuid):
                               "data": log_lines[start_line:end_line]})
 
 
-@app.route("/tasks/<task_uuid>/report", methods=['GET'])
+@app.route("/tasks/<task_uuid>/result", methods=['GET'])
 def get_task_result(task_uuid):
-    orig_stdout = sys.stdout
-    detailed_filename = ("{0}/{1}-detailed-result.log"
-                         .format(WORKDIR, task_uuid))
-    with file(detailed_filename, 'w') as detailed_file:
+    detailed_filename = ("task_{0}_detailed.log".format(task_uuid))
+
+    tee = Tee(detailed_filename, "w")
+    with open(os.path.join(WORKDIR,
+                           detailed_filename), 'w') as detailed_file:
         sys.stdout = detailed_file
         task_cli.TaskCommands().detailed(task_uuid)
-    sys.stdout = orig_stdout
-    return flask.send_from_directory(WORKDIR, detailed_file)
+
+    return flask.send_from_directory(WORKDIR, detailed_filename)
 
 
 @app.route("/tasks/<task_uuid>/report", methods=['GET'])
 def get_task_report(task_uuid):
     report_format = flask.request.args.get('format', 'html')
-    report_filename = "{0}/{1}.{2}".format(WORKDIR, task_uuid, report_format)
+
+    task_report_filename = "task_{0}.{1}".format(task_uuid, report_format)
 
     task_cli.TaskCommands().report(
         tasks=task_uuid,
-        out=report_filename,
+        out=os.path.join(WORKDIR, task_report_filename),
         out_format=report_format)
 
-    return flask.send_from_directory(WORKDIR, report_filename)
+    return flask.send_from_directory(WORKDIR, task_report_filename)
 
 
 @app.route("/tasks/<task_uuid>", methods=['DELETE'])
@@ -191,48 +285,82 @@ def delete_task(task_uuid):
     return 'Deleted', 204
 
 
-@app.route("/verification", methods=['POST'])
-def install_tempest():
+@app.route("/verifications", methods=['POST'])
+def run_verification():
+    def verify(verifier, verification_uuid, set_name, regex):
+        tempest_log_filename = "tempest_{0}.log".format(verification_uuid)
+        tee = Tee(os.path.join(WORKDIR, tempest_log_filename), 'w')
+        verifier.verify(set_name, regex)
+
     request = json.loads(flask.request.data)
-    deployment_uuid = request.get('deployment_uuid', None)
-    tempest_source = request.get('tempest_source', None)
-
-    if deployment_uuid is None:
-        deployment_uuid = find_deployment()
-
-    tempest = api.Verification.install_tempest(deployment_uuid,
-                                               tempest_source)
-    return flask.jsonify(tempest)
-
-
-@app.route("/verification/<deployment_uuid>", methods=['PUT'])
-def reinstall_tempest(deployment_uuid):
-    tempest = api.Verification.reinstall_tempest(deployment_uuid)
-    return flask.jsonify(tempest)
-
-
-@app.route("/verification/<deployment_uuid>/run", methods=['POST'])
-def run_tempest(deployment_uuid):
-    request = json.loads(flask.request.data)
-    set_name = request.get('set_name')
-    regex = request.get('regex')
+    deployment_uuid = request.get('deployment_uuid')
+    set_name = request.get('set_name', 'smoke')
+    regex = request.get('regex', None)
     tempest_config = request.get('tempest_config', None)
 
-    api.Verification.verify(deployment_uuid, set_name, regex, tempest_config)
-    return 'Started', 201
+    verification = objects.Verification(deployment_uuid=deployment_uuid)
+    verifier = tempest.Tempest(deployment_uuid, verification=verification,
+                               tempest_config=tempest_config)
+
+    if not verifier.is_installed():
+        flask.abort(500)
+
+    threading.Thread(target=verify,
+                     args=(verifier,
+                           verification.uuid,
+                           set_name,
+                           regex)).start()
+
+    return flask.jsonify(verification._as_dict()), 201
 
 
-@app.route("/verification/<deployment_uuid>", methods=['DELETE'])
-def uninstall_tempest(deployment_uuid):
-    api.Verification.uninstall_tempest(deployment_uuid)
-    return 'Deleted', 204
+@app.route("/verifications", methods=['GET'])
+def list_verifications():
+    return flask.jsonify(
+        {"verifications": [i._as_dict() for i in db.verification_list()]})
+
+
+@app.route("/verifications/<verification_uuid>", methods=['GET'])
+def get_verification(verification_uuid):
+    verification = db.verification_get(verification_uuid)
+    return flask.jsonify(verification._as_dict())
+
+
+@app.route("/verifications/<verification_uuid>/result", methods=['GET'])
+def get_verification_results(verification_uuid):
+    detailed = flask.request.args.get('detailed', False) and True
+
+    verification = db.verification_get(verification_uuid)['data']
+    results = db.verification_result_get(verification_uuid)
+
+    if detailed:
+        return flask.jsonify(results._as_dict())
+    else:
+        return flask.jsonify(verification._as_dict())
+
+
+@app.route("/verifications/<verification_uuid>/report", methods=['GET'])
+def get_verification_report(verification_uuid):
+    report_format = flask.request.args.get('report_format', 'html')
+
+    results = db.verification_result_get(verification_uuid)["data"]
+    output_file = "tempest_{0}.{1}".format(verification_uuid,
+                                           report_format)
+
+    if report_format == 'json':
+        result = json.dumps(results, sort_keys=True, indent=4)
+    else:
+        result = json2html.HtmlOutput(results).create_report()
+    with open(os.path.join(WORKDIR, output_file), "wb") as f:
+        f.write(result)
+
+    return flask.send_from_directory(
+        WORKDIR, output_file, mimetype="application/octet-stream")
 
 
 def main():
-    print "start rallyd"
     plugins.load()
-    print "plugins loaded"
-    app.run("0.0.0.0", 8001, debug=True)
+    app.run("0.0.0.0", 8001, debug=True, use_reloader=False)
 
 
 if __name__ == '__main__':
