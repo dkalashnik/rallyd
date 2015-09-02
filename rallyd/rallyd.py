@@ -119,7 +119,8 @@ def create_deployment():
         config, request.get("environment_name",
                             "default-{0}".format(uuid.uuid4().__str__())))
 
-    return flask.jsonify(deployment.deployment._as_dict()), 201
+    return flask.jsonify(
+        {"deployment": deployment.deployment._as_dict()}), 201
 
 
 @app.route("/deployments", methods=['GET'])
@@ -131,20 +132,22 @@ def list_deployments():
 @app.route("/deployments/<deployment_uuid>", methods=['GET'])
 def get_deployment(deployment_uuid):
     deployment = api.Deployment.get(deployment_uuid)
-    return flask.jsonify(deployment.deployment._as_dict())
+    return flask.jsonify(
+        {"deployment": deployment.deployment._as_dict()})
 
 
 @app.route("/deployments/<deployment_uuid>", methods=['PUT'])
 def recreate_deployment(deployment_uuid):
     api.Deployment.recreate(deployment_uuid)
     deployment = api.Deployment.get(deployment_uuid)
-    return flask.jsonify(deployment.deployment._as_dict()), 201
+    return flask.jsonify(
+        {"deployment": deployment.deployment._as_dict()}), 201
 
 
 @app.route("/deployments/<deployment_uuid>", methods=['DELETE'])
 def delete_deployment(deployment_uuid):
     api.Deployment.destroy(deployment_uuid)
-    return 'Deleted', 204
+    return flask.jsonify({"msg": "Deployment {0} deleted successfully"}), 204
 
 
 @app.route("/deployments/<deployment_uuid>/tempest", methods=['POST'])
@@ -158,28 +161,37 @@ def install_tempest(deployment_uuid):
                      args=(deployment_uuid,
                            tempest_source)).start()
 
-    return flask.jsonify({"msg": "Start installing tempest",
-                          "deployment_uuid": deployment_uuid}), 201
+    return flask.jsonify(
+        {"msg": "Start installing tempest for "
+                "deployment {0}".format(deployment_uuid),
+         "deployment_uuid": deployment_uuid}), 201
 
 
 @app.route("/deployments/<deployment_uuid>/tempest", methods=['GET'])
 def get_tempest_status(deployment_uuid):
     verifier = tempest.Tempest(deployment_uuid)
     status = os.path.exists(verifier.path(".testrepository"))
-    return flask.jsonify({"Installed": status})
+    return flask.jsonify(
+        {"msg": "Tempest is {0}installed".format("" if status else "not "),
+         "status": status})
 
 
 @app.route("/deployments/<deployment_uuid>/tempest", methods=['PUT'])
 def reinstall_tempest(deployment_uuid):
-    api.Verification.reinstall_tempest(deployment_uuid)
-    return flask.jsonify({"msg": "Tempest reinstalled",
-                          "deployment_uuid": deployment_uuid}), 201
+    threading.Thread(target=api.Verification.reinstall_tempest,
+                     args=(deployment_uuid)).start()
+    return flask.jsonify(
+        {"msg": "Tempest re-installation started for "
+                "deployment {0}".format(deployment_uuid),
+         "deployment_uuid": deployment_uuid}), 201
 
 
 @app.route("/deployments/<deployment_uuid>/tempest", methods=['DELETE'])
 def uninstall_tempest(deployment_uuid):
     api.Verification.uninstall_tempest(deployment_uuid)
-    return 'Deleted', 204
+    return flask.jsonify(
+        {"msg": "Tempest for deployemnt {0} is "
+                "deleted".format(deployment_uuid)}), 204
 
 
 @app.route("/tasks", methods=['POST'])
@@ -212,7 +224,7 @@ def create_task():
                            task,
                            abort_on_sla_failure)).start()
 
-    return flask.jsonify(task.task._as_dict()), 201
+    return flask.jsonify({"task": task.task._as_dict()}), 201
 
 
 @app.route("/tasks", methods=['GET'])
@@ -222,7 +234,7 @@ def list_tasks():
 
 @app.route("/tasks/<task_uuid>", methods=['GET'])
 def get_task(task_uuid):
-    return flask.jsonify(db.task_get(task_uuid)._as_dict())
+    return flask.jsonify({"task": db.task_get(task_uuid)._as_dict()})
 
 
 @app.route("/tasks/<task_uuid>/log", methods=['GET'])
@@ -242,11 +254,12 @@ def get_task_log(task_uuid):
     task_log_filename = "task_{0}.log".format(WORKDIR, task_uuid)
     with open(os.path.join(WORKDIR, task_log_filename), "r") as log:
         log_lines = log.readlines()
-        return flask.jsonify({"task_id": task_uuid,
-                              "total_lines": len(log_lines),
-                              "from": start_line,
-                              "to": end_line,
-                              "data": log_lines[start_line:end_line]})
+        return flask.jsonify(
+            {"task_log": {"task_id": task_uuid,
+                          "total_lines": len(log_lines),
+                          "from": start_line,
+                          "to": end_line,
+                          "data": log_lines[start_line:end_line]}})
 
 
 @app.route("/tasks/<task_uuid>/result", methods=['GET'])
@@ -282,7 +295,8 @@ def delete_task(task_uuid):
     if force:
         force = True
     api.Task.delete(task_uuid, force)
-    return 'Deleted', 204
+    return flask.jsonify(
+        {"msg": "Task {0} is deleted".format(task_uuid)}), 204
 
 
 @app.route("/verifications", methods=['POST'])
@@ -311,7 +325,7 @@ def run_verification():
                            set_name,
                            regex)).start()
 
-    return flask.jsonify(verification._as_dict()), 201
+    return flask.jsonify({"verification": verification._as_dict()}), 201
 
 
 @app.route("/verifications", methods=['GET'])
@@ -323,7 +337,7 @@ def list_verifications():
 @app.route("/verifications/<verification_uuid>", methods=['GET'])
 def get_verification(verification_uuid):
     verification = db.verification_get(verification_uuid)
-    return flask.jsonify(verification._as_dict())
+    return flask.jsonify({"verification": verification._as_dict()})
 
 
 @app.route("/verifications/<verification_uuid>/result", methods=['GET'])

@@ -1,15 +1,108 @@
 import argparse
+import os
+import json
 import pprint
 
-import rallyd_client
+import prettytable
+
+import rallyd_client as client
 
 
+collection_headers = \
+    {
+        "deployments": [
+            "uuid",
+            "name",
+            "status",
+            "created_at",
+        ],
+        "tasks": [
+            "uuid",
+            "tag",
+            "status",
+            "created_at",
+        ],
+        "verifications": [
+            "uuid",
+            "set_name",
+            "status",
+            "tests",
+            "errors",
+            "failures",
+            "created_at",
+        ]
+    }
+
+resource_fields = \
+    {
+        "deployment": [
+            "uuid",
+            "name",
+            "created_at",
+            "updated_at",
+            "started_at",
+            "completed_at",
+            "parent_uuid",
+            "config",
+        ],
+        "task": [
+            "uuid",
+            "tag",
+            "status",
+            "created_at",
+            "updated_at",
+            "deployment_uuid",
+            "verification_log",
+        ],
+        "verification": [
+            "uuid",
+            "set_name",
+            "status",
+            "tests",
+            "failures",
+            "errors",
+            "time",
+            "created_at",
+            "updated_at",
+            "deployment_uuid"]
+    }
+
+class Struct(object):
+    def __init__(self, **entries):
+        self.__dict__.update(entries)
+
+
+def print_collection_table(collection_name, collection_list):
+    headers = collection_headers[collection_name]
+    table = prettytable.PrettyTable(headers)
+
+    for resource in collection_list:
+        row = [resource.get(field, "") for field in headers]
+        table.add_row(row)
+
+    print table
+
+
+def print_resource_table(resource_name, resource):
+    fields = resource_fields[resource_name]
+    resource_headers = ["Property", "Value"]
+
+    table = prettytable.PrettyTable(resource_headers)
+    for header in resource_headers:
+        table.align[header] = "l"
+
+    values = [pprint.pformat(resource.get(field, '')) for field in fields]
+    for row in zip(fields, values):
+        table.add_row(row)
+    print table
 
 def parse_args(client):
     parser = argparse.ArgumentParser(
         description="Rallyd control utility", prog="rallyd-cmd")
     parser.add_argument(
         "--endpoint", help="rallyd endpoint", default="http://127.0.0.1:8001")
+    parser.add_argument(
+        "--json", help="Print pure-json output", action="store_true")
 
     subparsers = parser.add_subparsers()
 
@@ -166,13 +259,36 @@ def parse_args(client):
 
 
 def main():
-    rallyd_client = rallyd_client.RallydClient()
-    args = parse_args(rallyd_client)
+    rallyd_client = client.RallydClient()
+    args = vars(parse_args(rallyd_client))
 
-    args = vars(args)
     command = args.pop("func")
+    json_enabled = args.pop("json")
     rallyd_client.set_base_url(args.pop("endpoint"))
-    pprint.pprint(command(**args))
+    result = command(**args)
+
+    if json_enabled:
+        print json.dumps(result)
+        return
+
+    if "msg" in result:
+        pprint.pprint(result["msg"])
+        return
+
+    key, value = result.popitem()
+
+    if key in collection_headers:
+        print_collection_table(key, value)
+        return
+
+    if key in resource_fields:
+        print_resource_table(key, value)
+        return
+
+    # if key == 'task_log':
+    #     pprint()
+
+    pprint.pprint(result)
 
 
 if __name__ == '__main__':
