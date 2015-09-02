@@ -20,10 +20,10 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python",
     ],
-    py_modules=['rallyd_client'],
+    py_modules=['rallyd_client', 'rallyd_cli'],
     entry_points={
         'console_scripts': [
-            'rallyd_client = rallyd_client:main'
+            'rallyd_cli = rallyd_cli:main'
         ]
     }
 )
