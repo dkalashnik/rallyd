@@ -1,4 +1,5 @@
 import setuptools
+from pip import download
 from pip.req import parse_requirements
 
 
@@ -10,7 +11,8 @@ setuptools.setup(
     author="Mirantis",
     author_email="dkalashnik@mirantis.com",
     install_requires=[
-        str(ir.req) for ir in parse_requirements('requirements.txt')
+        str(ir.req) for ir in parse_requirements('requirements.txt',
+                                                 session=download.PipSession())
     ],
     classifiers=[
         "Environment :: OpenStack",
