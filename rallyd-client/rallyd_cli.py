@@ -133,15 +133,15 @@ def parse_args(client):
     create_task = subparsers.add_parser(
         "task-create", help="Start new rally task")
     create_task.add_argument(
-        "--task-filename", help="Path to task file", required=True)
+        "deployment_uuid", help="UUID of deployemnt to run task")
+    create_task.add_argument(
+        "task_filename", help="Path to task file")
     create_task.add_argument(
         "--task-params", action="append",
         help="Key=value formatted params to render rally task."
              "Not implemented.")
     create_task.add_argument(
         "--tag", help="Tag for rally task")
-    create_task.add_argument(
-        "--deployment-uuid", help="UUID of deployemnt to run task")
     create_task.add_argument(
         "--abort-on-sla-failure", action="store_true",
         help="Abort task on SLA failure")
@@ -154,13 +154,13 @@ def parse_args(client):
     get_task = subparsers.add_parser(
         "task-get", help="Print Rally task info")
     get_task.add_argument(
-        "--task-uuid", help="UUID of Rally task", required=True)
+        "task_uuid", help="UUID of Rally task")
     get_task.set_defaults(func=client.get_task)
 
     get_task_log = subparsers.add_parser(
         "task-log", help="Print log of Rally task")
     get_task_log.add_argument(
-        "--task-uuid", help="UUID of Rally task", required=True)
+        "task_uuid", help="UUID of Rally task")
     get_task_log.add_argument(
         "--start-line", type=int, help="Start line from log")
     get_task_log.add_argument(
@@ -170,7 +170,7 @@ def parse_args(client):
     get_task_result = subparsers.add_parser(
         "task-result", help="Download task result (table with stats)")
     get_task_result.add_argument(
-        "--task-uuid", help="UUID of Rally task", required=True)
+        "task_uuid", help="UUID of Rally task")
     get_task_result.add_argument(
         "--download-dir", help="Directory for downloading", default=".")
     get_task_result.set_defaults(func=client.get_task_result)
@@ -178,7 +178,7 @@ def parse_args(client):
     get_task_report = subparsers.add_parser(
         "task-report", help="Download task report")
     get_task_report.add_argument(
-        "--task-uuid", help="UUID of Rally task", required=True)
+        "task_uuid", help="UUID of Rally task")
     get_task_report.add_argument(
         "--report-format", help="Format of report",
         choices=["html", "junit"], default="html")
@@ -189,7 +189,7 @@ def parse_args(client):
     install_tempest = subparsers.add_parser(
         "tempest-install", help="Install tempest for deployment")
     install_tempest.add_argument(
-        "--deployment-uuid", help="Deployment UUID", required=True)
+        "deployment_uuid", help="Deployment UUID")
     install_tempest.add_argument(
         "--tempest-source", help="Source for tempest installation")
     install_tempest.set_defaults(func=client.install_tempest)
@@ -197,24 +197,24 @@ def parse_args(client):
     check_tempest = subparsers.add_parser(
         "tempest-check", help="Check tempest for deployment")
     check_tempest.add_argument(
-        "--deployment-uuid", help="Deployment UUID", required=True)
+        "deployment_uuid", help="Deployment UUID")
     check_tempest.set_defaults(func=client.check_tempest)
 
     reinstall_tempest = subparsers.add_parser(
         "tempest-reinstall", help="Reinstall tempest for deployment")
     reinstall_tempest.add_argument(
-        "--deployment-uuid", help="Deployment UUID", required=True)
+        "deployment_uuid", help="Deployment UUID")
     reinstall_tempest.set_defaults(func=client.reinstall_tempest)
 
     uninstall_tempest = subparsers.add_parser(
         "tempest-uninstall", help="Uninstall tempest for deployment")
     uninstall_tempest.add_argument(
-        "--deployment-uuid", help="Deployment UUID", required=True)
+        "deployment_uuid", help="Deployment UUID")
     uninstall_tempest.set_defaults(func=client.uninstall_tempest)
 
     run_verification = subparsers.add_parser(
         "verification-start", help="Run Tempest agains deployment")
-    run_verification.add_argument("--deployment-uuid", required=True)
+    run_verification.add_argument("deployment_uuid")
     run_verification.add_argument(
         "--set-name", help="full, smoke, scenario or api.")
     run_verification.add_argument(
@@ -230,13 +230,13 @@ def parse_args(client):
     get_verification = subparsers.add_parser(
         "verification-get", help="Get specific tempest run")
     get_verification.add_argument(
-        "--verification-uuid", help="UUID of verification run", required=True)
+        "verification_uuid", help="UUID of verification run")
     get_verification.set_defaults(func=client.get_verification)
 
     get_verification_result = subparsers.add_parser(
         "verification-result", help="Show tempest result")
     get_verification_result.add_argument(
-        "--verification-uuid", help="UUID of verification run", required=True)
+        "verification_uuid", help="UUID of verification run")
     get_verification_result.add_argument(
         "--detailed", action="store_true",
         help="Enable verbose raw json output")
@@ -245,7 +245,7 @@ def parse_args(client):
     get_verification_report = subparsers.add_parser(
         "verification-report", help="Download tempest run report")
     get_verification_report.add_argument(
-        "--verification-uuid", help="UUID of verification run", required=True)
+        "verification_uuid", help="UUID of verification run")
     get_verification_report.add_argument(
         "--report-format",
         help="Format of report. HTML report will be saved to [download-dir],"
@@ -271,6 +271,10 @@ def main():
         print json.dumps(result)
         return
 
+    if not isinstance(result, dict):
+        pprint.pprint(result)
+        return
+
     if "msg" in result:
         pprint.pprint(result["msg"])
         return
@@ -284,9 +288,6 @@ def main():
     if key in resource_fields:
         print_resource_table(key, value)
         return
-
-    # if key == 'task_log':
-    #     pprint()
 
     pprint.pprint(result)
 

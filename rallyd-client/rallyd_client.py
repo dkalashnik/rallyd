@@ -26,6 +26,9 @@ class RallydClient(object):
         else:
             body = r.content
 
+        if r.status_code == 500:
+            raise requests.HTTPError(r.content)
+
         return r.headers, body
 
     def post(self, url, body=None, **kwargs):

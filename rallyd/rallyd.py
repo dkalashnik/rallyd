@@ -344,11 +344,11 @@ def get_verification(verification_uuid):
 def get_verification_results(verification_uuid):
     detailed = flask.request.args.get('detailed', False) and True
 
-    verification = db.verification_get(verification_uuid)['data']
-    results = db.verification_result_get(verification_uuid)
+    verification = db.verification_get(verification_uuid)
+    results = db.verification_result_get(verification_uuid)['data']
 
     if detailed:
-        return flask.jsonify(results._as_dict())
+        return flask.jsonify(results)
     else:
         return flask.jsonify(verification._as_dict())
 
@@ -374,7 +374,7 @@ def get_verification_report(verification_uuid):
 
 def main():
     plugins.load()
-    app.run("0.0.0.0", 8001, debug=True, use_reloader=False)
+    app.run("0.0.0.0", 8000, debug=True, use_reloader=False)
 
 
 if __name__ == '__main__':
