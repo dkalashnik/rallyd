@@ -4,16 +4,19 @@ MAINTAINER Dmitry Kalashnik <dkalashnik@mirantis.com>                      && \
 USER root
 
 # Installation of rallyd and tempest cache
-
-RUN git clone https://github.com/dkalashnik/rallyd                         && \
-    pip install ./rallyd/rallyd/                                           && \
+COPY . /tmp/rallyd
+RUN pip install /tmp/rallyd/ && apt-get update                             && \
     apt-get -y install build-essential gcc-4.8 libffi-dev libssl-dev          \
                        libxml2-dev libxslt1-dev python-dev python          && \
     mkdir /opt/rallyd                                                      && \
 
     git clone https://github.com/openstack/tempest /opt/rallyd/tempest     && \
-    pip install -r /opt/rallyd/tempest/requirements.txt                    && \
-
+    pip install -r /opt/rallyd/tempest/requirements.txt                       \
+                -r /opt/rallyd/tempest/test-requirements.txt               && \
+    cd /opt/rallyd/tempest                                                 && \
+    git config --global user.name "Dmitry Kalashnik"                       && \
+    git config --global user.email "dkalashnik@mirantis.com"               && \
+    git am /tmp/rallyd/0001-Enable-global-packages.patch                   && \
     chmod +w /etc/sudoers                                                  && \
     echo "rally ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers                   && \
     chmod -w /etc/sudoers
@@ -23,7 +26,7 @@ RUN git clone https://github.com/dkalashnik/rallyd                         && \
 RUN apt-get -y remove build-essential gcc-4.8 libffi-dev libssl-dev           \
                       libxml2-dev libxslt1-dev python-dev                  && \
     apt-get -y autoremove && apt-get clean                                 && \
-    rm -rf rallyd                                                          && \
+    rm -rf /tmp/rallyd                                                     && \
     rm /home/rally/.rally.sqlite
 USER rally
 
