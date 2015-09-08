@@ -1,19 +1,24 @@
 import setuptools
-from pip import download
 from pip.req import parse_requirements
 
+try:
+    from pip.download import PipSession
+    requirements = [
+        str(ir.req) for ir in parse_requirements('requirements.txt',
+                                                 session=PipSession())]
+except ImportError:
+    requirements = [
+        str(ir.req) for ir in parse_requirements('requirements.txt')]
 
-version = '0.0.1'
+
+version = '1.0.0'
 setuptools.setup(
     name='rallyd',
     version=version,
     description="HTTP API for Rally Benchmark System for OpenStack",
     author="Mirantis",
     author_email="dkalashnik@mirantis.com",
-    install_requires=[
-        str(ir.req) for ir in parse_requirements('requirements.txt',
-                                                 session=download.PipSession())
-    ],
+    install_requires=requirements,
     classifiers=[
         "Environment :: OpenStack",
         "Intended Audience :: Developers",
