@@ -58,14 +58,14 @@ app.json_encoder = DateJSONEncoder
 
 
 def setup_logging(log_filename_prefix, log_filename_suffix=''):
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(threadName)s - '
-                                  '%(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
+                                  '- %(threadName)s - %(message)s')
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setFormatter(formatter)
     stdout_handler.setLevel(logging.INFO)
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s - '
-                                  '%(levelname)s - %(message)s')
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
+                                  '- %(message)s')
     log_filename = "{0}_{1}.log".format(log_filename_prefix,
                                         log_filename_suffix)
     file_handler = logging.FileHandler(os.path.join(WORKDIR, log_filename))
@@ -251,7 +251,7 @@ def get_task_log(task_uuid):
     if end_line is not None:
         end_line = int(end_line)
 
-    task_log_filename = "task_{0}.log".format(WORKDIR, task_uuid)
+    task_log_filename = "task_{0}.log".format(task_uuid)
     with open(os.path.join(WORKDIR, task_log_filename), "r") as log:
         log_lines = log.readlines()
         return flask.jsonify(
