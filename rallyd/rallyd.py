@@ -254,6 +254,8 @@ def get_task_log(task_uuid):
     task_log_filename = "task_{0}.log".format(task_uuid)
     with open(os.path.join(WORKDIR, task_log_filename), "r") as log:
         log_lines = log.readlines()
+        app.logger.info("Working with: {0}, first line:\n"
+                        .format(log, log_lines[0]))
         return flask.jsonify(
             {"task_log": {"task_id": task_uuid,
                           "total_lines": len(log_lines),

@@ -100,7 +100,7 @@ def parse_args(client):
     parser = argparse.ArgumentParser(
         description="Rallyd control utility", prog="rallyd-cmd")
     parser.add_argument(
-        "--endpoint", help="rallyd endpoint", default="http://127.0.0.1:8001")
+        "--endpoint", help="rallyd endpoint", default="http://127.0.0.1:10000")
     parser.add_argument(
         "--json", help="Print pure-json output", action="store_true")
 
