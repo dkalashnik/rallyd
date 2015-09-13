@@ -275,10 +275,6 @@ def main():
         pprint.pprint(result)
         return
 
-    if "msg" in result:
-        pprint.pprint(result["msg"])
-        return
-
     key, value = result.popitem()
 
     if key in collection_headers:
@@ -289,7 +285,17 @@ def main():
         print_resource_table(key, value)
         return
 
-    pprint.pprint(result)
+    if key == "msg":
+        pprint.pprint(value)
+        return
+
+    if key == "task_log":
+        data = value.pop("data")
+        pprint.pprint(value)
+        pprint.pprint(''.join(data))
+        return
+
+    pprint.pprint(value)
 
 
 if __name__ == '__main__':
