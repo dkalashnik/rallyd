@@ -77,7 +77,7 @@ class RallydClient(object):
                     deployment_uuid=None, abort_on_sla_failure=False):
         request = {
             "task_config": json.loads(file(task_filename).read()),
-            "task_params": task_params if task_params is not None else {},
+            "task_params": task_params or {},
             "tag": tag,
             "deployment_uuid": deployment_uuid,
             "abort_on_sla_failure": abort_on_sla_failure}

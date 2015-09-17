@@ -11,6 +11,7 @@ import uuid
 import urllib
 
 import flask
+import jinja2
 from oslo_config import cfg
 from rally import api
 from rally.cli.commands import task as task_cli
@@ -59,12 +60,6 @@ app.json_encoder = DateJSONEncoder
 
 def setup_logging(log_filename_prefix, log_filename_suffix=''):
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
-                                  '- %(threadName)s - %(message)s')
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-    stdout_handler.setLevel(logging.INFO)
-
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
                                   '- %(message)s')
     log_filename = "{0}_{1}.log".format(log_filename_prefix,
                                         log_filename_suffix)
@@ -74,7 +69,6 @@ def setup_logging(log_filename_prefix, log_filename_suffix=''):
 
     logger = logging.getLogger('rally')
     logger.setLevel(logging.DEBUG)
-    logger.addHandler(stdout_handler)
     logger.addHandler(file_handler)
 
 @app.route("/api_map", methods=['GET'])
@@ -209,15 +203,21 @@ def create_task():
 
     request = json.loads(flask.request.data)
     request = byteify(request)
+
     deployment_uuid = request.get('deployment_uuid')
     tag = request.get('tag', None)
     task_config = request.get('task_config')
+    task_params = request.get('task_params')
     abort_on_sla_failure = request.get('abort_on_sla_failure', False)
 
+    if task_params:
+        for i in task_params:
+            task_params[i] = json.dumps(task_params[i])
+        task_config = api.Task.render_template(task_config, **task_params)
+
+    task_config = json.loads(task_config)
     task = api.Task.create(deployment_uuid, tag)
-
     setup_logging('task', task.task.uuid)
-
     threading.Thread(target=api.Task.start,
                      args=(deployment_uuid,
                            task_config,
@@ -373,6 +373,15 @@ def get_verification_report(verification_uuid):
 
 
 def main():
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
+                                  '- %(threadName)s - %(message)s')
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(formatter)
+    stdout_handler.setLevel(logging.INFO)
+    logger = logging.getLogger('rally')
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(stdout_handler)
+
     plugins.load()
     app.run("0.0.0.0", 8000, debug=True, use_reloader=False)
 
