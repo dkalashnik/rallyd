@@ -73,14 +73,17 @@ class RallydClient(object):
             self.delete("/deployments/{0}".format(deployment_uuid))
         return body
 
-    def create_task(self, task_filename, task_params=None, tag=None,
+    def create_task(self, task, task_params=None, tag=None,
                     deployment_uuid=None, abort_on_sla_failure=False):
         request = {
-            "task_config": json.loads(file(task_filename).read()),
-            "task_params": task_params or {},
+            "task_config": task,
             "tag": tag,
             "deployment_uuid": deployment_uuid,
             "abort_on_sla_failure": abort_on_sla_failure}
+
+        if task_params is not None:
+            task_params = json.loads(task_params)
+            request.update({"task_params": task_params})
 
         headers, body = self.post("/tasks", body=request)
         return body

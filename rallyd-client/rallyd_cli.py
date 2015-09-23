@@ -130,6 +130,18 @@ def parse_args(client):
         "deployment-list", help="Print list of rally deployments")
     list_deployments.set_defaults(func=client.list_deployments)
 
+    def start_task(task_file, task_params,
+                   tag, deployment_uuid, abort_on_sla_failure):
+        if task_params is not None:
+            return client.create_task(
+                open(task_file).read(),
+                task_params=open(task_params).read(),
+                tag=tag, deployment_uuid=deployment_uuid,
+                abort_on_sla_failure=abort_on_sla_failure)
+        return client.create_task(open(task_file).read(),
+                                  tag=tag, deployment_uuid=deployment_uuid,
+                                  abort_on_sla_failure=abort_on_sla_failure)
+
     create_task = subparsers.add_parser(
         "task-create", help="Start new rally task")
     create_task.add_argument(
@@ -137,15 +149,13 @@ def parse_args(client):
     create_task.add_argument(
         "task_filename", help="Path to task file")
     create_task.add_argument(
-        "--task-params", action="append",
-        help="Key=value formatted params to render rally task."
-             "Not implemented.")
+        "--task-params", help="Path to json file with additional params")
     create_task.add_argument(
         "--tag", help="Tag for rally task")
     create_task.add_argument(
         "--abort-on-sla-failure", action="store_true",
         help="Abort task on SLA failure")
-    create_task.set_defaults(func=client.create_task)
+    create_task.set_defaults(func=start_task)
 
     list_tasks = subparsers.add_parser(
         "task-list", help="List Rally tasks")
