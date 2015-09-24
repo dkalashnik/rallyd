@@ -130,15 +130,15 @@ def parse_args(client):
         "deployment-list", help="Print list of rally deployments")
     list_deployments.set_defaults(func=client.list_deployments)
 
-    def start_task(task_file, task_params,
+    def start_task(task_filename, task_params,
                    tag, deployment_uuid, abort_on_sla_failure):
         if task_params is not None:
             return client.create_task(
-                open(task_file).read(),
+                open(task_filename).read(),
                 task_params=open(task_params).read(),
                 tag=tag, deployment_uuid=deployment_uuid,
                 abort_on_sla_failure=abort_on_sla_failure)
-        return client.create_task(open(task_file).read(),
+        return client.create_task(open(task_filename).read(),
                                   tag=tag, deployment_uuid=deployment_uuid,
                                   abort_on_sla_failure=abort_on_sla_failure)
 
