@@ -373,14 +373,18 @@ def get_verification_report(verification_uuid):
 
 
 def main():
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s - %(levelname)s - %(name)s '
+                               '- %(threadName)s - %(message)s',
+                        filename='/var/log/rallyd.log',
+                        filemode='w')
+
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s '
                                   '- %(threadName)s - %(message)s')
-    stdout_handler = logging.StreamHandler(sys.stdout)
-    stdout_handler.setFormatter(formatter)
-    stdout_handler.setLevel(logging.INFO)
-    logger = logging.getLogger('rally')
-    logger.setLevel(logging.DEBUG)
-    logger.addHandler(stdout_handler)
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
 
     plugins.load()
     app.run("0.0.0.0", 8000, debug=True, use_reloader=False)
