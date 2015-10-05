@@ -108,7 +108,8 @@ def create_deployment():
         "admin": {
             "username": request.get("username"),
             "password": request.get("password"),
-            "tenant_name": request.get("tenant_name")}}
+            "tenant_name": request.get("tenant_name")},
+        "https_insecure": True}
     deployment = api.Deployment.create(
         config, request.get("environment_name",
                             "default-{0}".format(uuid.uuid4().__str__())))

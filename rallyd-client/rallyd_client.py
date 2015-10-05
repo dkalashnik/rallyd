@@ -47,7 +47,8 @@ class RallydClient(object):
         headers, body = self.post("/db")
         return body
 
-    def create_deployment(self, auth_url, username, password, tenant_name, **kwargs):
+    def create_deployment(self, auth_url, username, password, tenant_name,
+                          **kwargs):
         request = {"auth_url": auth_url,
                    "username": username,
                    "password": password,
