@@ -302,16 +302,17 @@ def delete_task(task_uuid):
 
 @app.route("/verifications", methods=['POST'])
 def run_verification():
-    def verify(verifier, verification_uuid, set_name, regex):
+    def verify(verifier, verification_uuid, set_name, regex, concurrency):
         tempest_log_filename = "tempest_{0}.log".format(verification_uuid)
         tee = Tee(os.path.join(WORKDIR, tempest_log_filename), 'w')
-        verifier.verify(set_name, regex)
+        verifier.verify(set_name, regex, concurrency)
 
     request = json.loads(flask.request.data)
     deployment_uuid = request.get('deployment_uuid')
     set_name = request.get('set_name', 'smoke')
     regex = request.get('regex', None)
     tempest_config = request.get('tempest_config', None)
+    concurrency = request.get('concurrency', 1)
 
     verification = objects.Verification(deployment_uuid=deployment_uuid)
     verifier = tempest.Tempest(deployment_uuid, verification=verification,
@@ -324,7 +325,8 @@ def run_verification():
                      args=(verifier,
                            verification.uuid,
                            set_name,
-                           regex)).start()
+                           regex,
+                           concurrency)).start()
 
     return flask.jsonify({"verification": verification._as_dict()}), 201
 

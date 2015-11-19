@@ -153,12 +153,13 @@ class RallydClient(object):
         return body
 
     def run_verification(self, deployment_uuid, set_name=None,
-                         regex=None, tempest_config=None):
+                         regex=None, tempest_config=None, concurrency=1):
         request = {
             "deployment_uuid": deployment_uuid,
             "set_name": set_name,
             "regex": regex,
-            "tempest_config": tempest_config}
+            "tempest_config": tempest_config,
+            "concurrency": concurrency}
         headers, body = self.post("/verifications", body=request)
         return body
 

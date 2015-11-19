@@ -231,6 +231,8 @@ def parse_args(client):
         "--regex", help="regex mathing cases to run")
     run_verification.add_argument(
         "--tempest-config", help="Path to custom tempest config")
+    run_verification.add_argument(
+        "--concurrency", type=int, help="Number of threads to run", default=1)
     run_verification.set_defaults(func=client.run_verification)
 
     list_verifications = subparsers.add_parser(
